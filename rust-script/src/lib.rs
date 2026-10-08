@@ -21,7 +21,7 @@ pub use runtime::RustScriptExtensionLayer;
 pub mod private_export {
     pub use crate::static_script_registry::{
         RegistryItem, RustScriptEntry, RustScriptEntryMethods, RustScriptMetaData,
-        RustScriptMethodDesc, RustScriptPropDesc, RustScriptSignalDesc, SCRIPT_REGISTRY,
+        RustScriptMethodDesc, RustScriptConstantDesc, RustScriptPropDesc, RustScriptSignalDesc, SCRIPT_REGISTRY,
         assemble_metadata, create_default_data_struct,
     };
     pub use const_str::{concat, replace, strip_prefix, unwrap};

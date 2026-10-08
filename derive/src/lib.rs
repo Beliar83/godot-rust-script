@@ -10,16 +10,14 @@ mod impl_attribute;
 mod property_group;
 mod type_paths;
 
+use std::collections::HashSet;
 use darling::{FromAttributes, FromDeriveInput, FromMeta, util::SpannedValue};
 use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote, quote_spanned};
 use syn::{DeriveInput, Ident, Type, parse_macro_input, spanned::Spanned};
 
-use crate::attribute_ops::{
-    ExportGroup, ExportMetadata, ExportSubgroup, FieldExportOps, FieldOpts, FieldSignalOps,
-    GodotScriptOpts, PropertyOpts,
-};
+use crate::attribute_ops::{ExportGroup, ExportMetadata, ExportSubgroup, FieldExportOps, FieldOpts, FieldSignalOps, GodotScriptConstantOpts, GodotScriptOpts, PropertyOpts};
 use crate::property_group::{
     dispatch_property_group_get, dispatch_property_group_set, dispatch_property_group_state_export,
 };
@@ -27,7 +25,7 @@ use crate::type_paths::{godot_types, property_hints, property_usage, string_name
 
 #[proc_macro_derive(
     GodotScript,
-    attributes(export, export_group, export_subgroup, script, prop, signal)
+    attributes(constant, export, export_group, export_subgroup, script, prop, signal)
 )]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -48,6 +46,36 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .base
         .map(|ident| quote!(#ident))
         .unwrap_or_else(|| quote!(::godot_rust_script::godot::prelude::RefCounted));
+
+    let mut used_constant_names = HashSet::new();
+
+    let (constant_metadata, constant_errors) : (TokenStream, TokenStream) = opts
+        .attrs
+        .iter()
+        .filter(|a| a.path().is_ident("constant"))
+        .map(
+            |a| {
+                match GodotScriptConstantOpts::from_meta(&a.meta) {
+                    Ok(constant_definition) => {
+                        let constant_name = constant_definition.name.to_string();
+                        if used_constant_names.insert(constant_name.clone()) {
+                            let name = constant_name;
+                            let value = constant_definition.value;
+                            let item = quote_spanned! {a.span()=>
+                                builder.add_constant(::godot_rust_script::private_export::RustScriptConstantDesc { name: #name.into(), get_value: || ::godot::builtin::Variant::from(#value) });
+                            };
+                            (item, TokenStream::default())
+                        } else {
+                            let error = compile_error("Constant name already used", a);
+                            (TokenStream::default(), error)
+                        }
+                    }
+                    Err(err) => {
+                        (TokenStream::default(), err.write_errors())
+                    }
+                }
+            }
+        ).collect();
 
     let script_type_ident = opts.ident;
     let class_name = script_type_ident.to_string();
@@ -80,6 +108,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             let is_public = matches!(field.vis, syn::Visibility::Public(_))
                 || field.attrs.iter().any(|attr| attr.path().is_ident("prop"));
+            
             let is_signal = signal_attr.is_some();
             let export_ops = export_attr
                 .is_some()
@@ -192,6 +221,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
 
         #signal_const_assert
+        #constant_errors
         #field_errors
 
         ::godot_rust_script::register_script_class!(
@@ -200,6 +230,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             concat!(#description),
             #is_tool,
             builder => {
+                #constant_metadata
                 #field_metadata
                 #signal_metadata
             }

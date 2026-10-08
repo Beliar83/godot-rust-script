@@ -24,6 +24,8 @@ pub enum ScriptEnum {
 
 #[derive(GodotScript, Debug)]
 #[script(base = Node, tool)]
+#[constant(name=Constant, value=1)]
+#[constant(name=Constant2, value=2)]
 struct TestScript {
     pub property_a: GString,
 

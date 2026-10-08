@@ -421,13 +421,19 @@ pub struct FieldOpts {
 }
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(supports(struct_any), attributes(script), forward_attrs(doc))]
+#[darling(supports(struct_any), attributes(script), forward_attrs(doc, constant))]
 pub struct GodotScriptOpts {
     pub ident: syn::Ident,
     pub data: Data<util::Ignored, SpannedValue<FieldOpts>>,
     pub base: Option<syn::Ident>,
     pub tool: Option<()>,
     pub attrs: Vec<syn::Attribute>,
+}
+
+#[derive(FromMeta, Debug)]
+pub struct GodotScriptConstantOpts {
+    pub name: syn::Ident,
+    pub value: syn::Lit,
 }
 
 #[derive(FromAttributes, Debug)]

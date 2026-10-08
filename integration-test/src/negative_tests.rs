@@ -23,5 +23,18 @@
 /// #[derive(ScriptExportSubgroup, Default, Debug)]
 /// struct PropertySubgroup2;
 /// ````
+
+/// Constant names shouldbe unique
+/// ```compile_fail
+/// use godot_rust_script::{GodotScript, godot_script_impl};
+///
+/// #[derive(GodotScript, Debug)]
+/// #[constant(name=Constant, value=1)]
+/// #[constant(name=Constant, value=2)]
+/// struct UniqueConstants {}
+///
+/// #[godot_script_impl]
+/// impl UniqueConstants {}
+/// ````
 #[allow(dead_code)]
 pub struct InternalDocTests;

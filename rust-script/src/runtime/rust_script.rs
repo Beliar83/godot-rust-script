@@ -6,9 +6,7 @@
 
 use std::{cell::RefCell, collections::HashSet, ffi::c_void};
 
-use godot::builtin::{
-    AnyDictionary, Array, Callable, GString, StringName, VarArray, VarDictionary, Variant,
-};
+use godot::builtin::{AnyDictionary, Array, Callable, Dictionary, GString, GodotStringExt, StringName, VarArray, VarDictionary, Variant};
 use godot::classes::{
     ClassDb, Engine, IScriptExtension, Object, Script, ScriptExtension, ScriptLanguage,
     notify::ObjectNotification, object::ConnectFlags,
@@ -322,7 +320,22 @@ impl IScriptExtension for RustScript {
     }
 
     fn get_constants(&self) -> AnyDictionary {
-        VarDictionary::new().upcast_any_dictionary()
+        RustScriptLanguage::with_script_metadata(&self.str_class_name(), |script_data| {
+            let Some(script) = script_data else {
+                godot_error!(
+                    "RustScript class {} does not exist in compiled dynamic library!",
+                    self.str_class_name()
+                );
+                return Dictionary::<Variant, Variant>::new().upcast_any_dictionary();
+            };
+            script.constants.iter().map(|constant| (constant.name.to_string().to_variant(), (constant.get_value)())).collect::<Dictionary<_,_>>().upcast_any_dictionary()
+        })        
+        
+        // let reg = SCRIPT_REGISTRY.read().expect("unable to obtain read lock");
+        // 
+        // reg.get(&self.str_class_name())
+        //     .map(|class| {
+        //         class.constants.iter().map(|constant| (constant.name.clone(), constant.value.clone())) }).unwrap_or_default().collect::<AnyDictionary>()    
     }
     fn get_method_info(&self, method_name: StringName) -> AnyDictionary {
         let reg = SCRIPT_REGISTRY.read().expect("unable to obtain read lock");
@@ -542,5 +555,24 @@ impl IScriptExtension for RustScript {
     #[cfg(since_api = "4.4")]
     fn get_doc_class_name(&self) -> StringName {
         StringName::from(&self.class_name)
+    }
+
+    fn on_get(&self, property: StringName) -> Option<Variant> {
+        RustScriptLanguage::with_script_metadata(&self.str_class_name(), |script_data| {
+            let Some(script) = script_data else {
+                godot_error!(
+                    "RustScript class {} does not exist in compiled dynamic library!",
+                    self.str_class_name()
+                );
+                return None;
+            };
+            script.constants.iter().find_map(|constant| {
+                if constant.name.to_string_name() == property {
+                    Some((constant.get_value)())
+                } else {
+                    None
+                }
+            })
+        })
     }
 }

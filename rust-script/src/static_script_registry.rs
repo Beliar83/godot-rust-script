@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -11,7 +11,8 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use godot::builtin::{GString, StringName};
 use godot::meta::{ClassId, ToGodot};
-use godot::prelude::{Gd, Object};
+use godot::meta::conv::ByValue;
+use godot::prelude::{Gd, Object, Var, Variant};
 use godot::register::info::{
     MethodFlags, MethodInfo, PropertyHint, PropertyHintInfo, PropertyInfo, PropertyUsageFlags,
 };
@@ -63,6 +64,7 @@ macro_rules! register_script_methods {
 pub struct RustScriptEntry {
     pub class_name: &'static str,
     pub base_type_name: Cow<'static, str>,
+    pub constants: Box<[RustScriptConstantDesc]>,
     pub properties: Box<[RustScriptPropDesc]>,
     pub signals: Box<[RustScriptSignalDesc]>,
     pub create_data: fn(Gd<Object>) -> Box<dyn GodotScriptObject>,
@@ -80,6 +82,7 @@ impl RustScriptEntry {
         RustScriptEntryBuilder {
             class_name,
             base_type_name,
+            constants: Vec::new(),
             properties: Vec::new(),
             signals: Vec::new(),
             create_data,
@@ -92,6 +95,7 @@ impl RustScriptEntry {
 pub struct RustScriptEntryBuilder {
     class_name: &'static str,
     base_type_name: Cow<'static, str>,
+    constants: Vec<RustScriptConstantDesc>,
     properties: Vec<RustScriptPropDesc>,
     signals: Vec<RustScriptSignalDesc>,
     create_data: fn(Gd<Object>) -> Box<dyn GodotScriptObject>,
@@ -100,6 +104,10 @@ pub struct RustScriptEntryBuilder {
 }
 
 impl RustScriptEntryBuilder {
+    pub fn add_constant(&mut self, constant: RustScriptConstantDesc) {
+        self.constants.push(constant);
+    }
+    
     pub fn add_property(&mut self, prop: RustScriptPropDesc) {
         self.properties.push(prop);
     }
@@ -121,6 +129,7 @@ impl RustScriptEntryBuilder {
         let Self {
             class_name,
             base_type_name,
+            constants,
             properties,
             signals,
             create_data,
@@ -131,6 +140,7 @@ impl RustScriptEntryBuilder {
         RustScriptEntry {
             class_name,
             base_type_name,
+            constants: constants.into(),
             properties: properties.into(),
             signals: signals.into(),
             create_data,
@@ -179,6 +189,12 @@ impl RustScriptEntryMethodsBuilder {
 pub enum RegistryItem {
     Entry(fn() -> RustScriptEntry),
     Methods(fn() -> RustScriptEntryMethods),
+}
+
+#[derive(Debug, Clone)]
+pub struct RustScriptConstantDesc {
+    pub name: Cow<'static, str>,
+    pub get_value: fn() -> Variant,
 }
 
 #[derive(Debug, Clone)]
@@ -284,6 +300,7 @@ pub fn assemble_metadata<'a>(
         .into_iter()
         .flatten()
         .map(|class| {
+            let constants = class.constants.clone();
             let props = class.properties.clone();
 
             let methods = methods
@@ -300,6 +317,7 @@ pub fn assemble_metadata<'a>(
             RustScriptMetaData::new(
                 class.class_name,
                 class.base_type_name.as_ref().into(),
+                constants,
                 props,
                 methods,
                 signals,
@@ -370,6 +388,7 @@ impl From<RustScriptMethodDesc> for MethodInfo {
 pub struct RustScriptMetaData {
     pub(crate) class_name: ClassId,
     pub(crate) base_type_name: StringName,
+    pub(crate) constants: Box<[RustScriptConstantDesc]>,
     pub(crate) properties: Box<[RustScriptPropDesc]>,
     pub(crate) methods: Box<[RustScriptMethodDesc]>,
     pub(crate) signals: Box<[RustScriptSignalDesc]>,
@@ -382,6 +401,7 @@ impl RustScriptMetaData {
     pub fn new(
         class_name: &'static str,
         base_type_name: StringName,
+        constants: Box<[RustScriptConstantDesc]>,
         properties: Box<[RustScriptPropDesc]>,
         methods: Box<[RustScriptMethodDesc]>,
         signals: Box<[RustScriptSignalDesc]>,
@@ -392,6 +412,7 @@ impl RustScriptMetaData {
             class_name: get_class_id(class_name),
 
             base_type_name,
+            constants,
             properties,
             methods,
             signals,
